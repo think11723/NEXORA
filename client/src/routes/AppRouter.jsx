@@ -1,7 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 
 import FoundationLayout from '../layouts/FoundationLayout.jsx';
-import AuthenticatedHomePage from '../pages/AuthenticatedHomePage.jsx';
+import FeedPage from '../pages/FeedPage.jsx';
 import HealthTestPage from '../pages/HealthTestPage.jsx';
 import LoginPage from '../pages/LoginPage.jsx';
 import NetworkPage from '../pages/NetworkPage.jsx';
@@ -14,10 +14,12 @@ import PublicOnlyRoute from './PublicOnlyRoute.jsx';
 /**
  * Top-level routing.
  *
- * `/` is the authenticated home — protected by `ProtectedRoute`.
- * `/login` and `/register` are public-only; signed-in visitors are
- * redirected home. The health-test page and a 404 fallback sit inside
- * the foundation shell so they always have a consistent chrome.
+ * The authenticated home `/` renders the Feed. `/feed` is also exposed
+ * explicitly as an alias — same component, same protection — so deep
+ * links and the navigation can use either.
+ *
+ * `/login` and `/register` are public-only. The health-test page and
+ * a 404 fallback live inside the foundation shell.
  *
  * Profile routes:
  *   /profile/me        — protected (owner only). Declared BEFORE the
@@ -29,10 +31,19 @@ function AppRouter() {
   return (
     <Routes>
       <Route
+        path="/feed"
+        element={
+          <ProtectedRoute>
+            <FeedPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/"
         element={
           <ProtectedRoute>
-            <AuthenticatedHomePage />
+            <FeedPage />
           </ProtectedRoute>
         }
       />

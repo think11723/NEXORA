@@ -1,19 +1,23 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import connectionReducer from './slices/connectionSlice.js';
+import postReducer from './slices/postSlice.js';
 
 /**
  * NEXORA — Redux store.
  *
- * One slice today: `connection` (see slices/connectionSlice.js). The
- * store is configured with the standard Redux Toolkit defaults plus a
- * tiny serializableCheck tweak: our Axios response interceptor puts the
- * raw payload on `rejected` actions via rejectWithValue, which RTK's
- * default serializable check treats as fine. Nothing exotic here.
+ * Slices:
+ *   - connection  → shared network / connection state (Phase 4)
+ *   - post        → shared feed / post / pagination state (Phase 5)
+ *
+ * The `post` slice is intentionally separated from `connection` so the
+ * two domains can evolve independently. Cross-domain reads (e.g. a
+ * post author profile) use the backend's safe serializer rather than
+ * client-side joins.
  */
 export const store = configureStore({
   reducer: {
     connection: connectionReducer,
+    post: postReducer,
   },
-  // Default middleware (thunk + serializable + immutable) is sufficient.
 });

@@ -438,6 +438,42 @@ Expected: 41/41 passed. The connection smoke (`node scripts/connection.smoke.cjs
 
 See [PROJECT_CONSTITUTION.md](./PROJECT_CONSTITUTION.md) §12 (Post System Principles) for the architecture summary.
 
+### Feed UI (Phase 5 — Prompt 2)
+
+The authenticated home is the **Feed**. The route `/` (and the explicit alias `/feed`) renders a Tailwind-styled feed with:
+
+- **PostComposer** at the top — textarea with character counter, validation, and disabled-during-request state. Server-confirmed create; never optimistically patches Redux.
+- **PostCard** for each post — author block with avatar fallback + headline + timestamp + content (plain text only, no `dangerouslySetInnerHTML`).
+- **PostActionsMenu** — kebab menu shown only on the caller's own posts. Edit / Delete actions.
+- **EditPostModal** — local-state edit form, validation, character counter, server-confirmed update.
+- **DeletePostDialog** — confirmation alertdialog, server-confirmed delete.
+- **Load more** pagination gated by `pagination.hasNextPage` from the backend; in-flight requests are debounced locally.
+- **Empty / error / loading / skeleton states** for every async surface.
+
+**Redux architecture:**
+
+- New `post` slice (see `client/src/store/slices/postSlice.js`) owns:
+  - `feed` (paginated list + pagination + loading + error)
+  - `myPosts` (paginated list + pagination + loading + error)
+  - `userPostsByUserId` (per-user feed cache)
+  - `mutations.create / .update / .delete` (loading + error flags per postId)
+- Selectors: `selectFeedPosts`, `selectFeedPagination`, `selectFeedLoading`, `selectFeedError`, `selectMyPosts*`, `selectCreateMutationState`, `selectUpdateMutationState(postId)`, `selectDeleteMutationState(postId)`.
+
+**Redux / local-state boundary (explicit):**
+
+- In Redux: server-derived feed data, pagination metadata, async mutation state, shared post data.
+- Local to each component: composer textarea content while typing, modal / dialog open/close state, dropdown / menu state, hover / focus state, local form drafts (edit modal text).
+- The composer dispatches ONLY on submit, never on every keystroke.
+
+**Routes:**
+
+- `/` and `/feed` both render `FeedPage` (the authenticated home).
+- The temporary `AuthenticatedHomePage` from Phase 2 was removed.
+
+**Backend integration:**
+
+Every API call goes through `postService.js` which uses the existing `apiClient` (so the JWT interceptor + 401 bridge apply transparently). The Phase 5 Prompt 1 backend contract is consumed as-is — the serializer, error envelope, and pagination block are used verbatim.
+
 ### Profile (Phase 3 — Prompt 1)
 
 | Method | Path                      | Auth | Purpose                                 |

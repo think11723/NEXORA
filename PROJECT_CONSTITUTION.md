@@ -187,6 +187,18 @@ Phases ship only what their scope describes. The foundation phase establishes in
 - **HTML / script content is stored as plain text.** The backend never renders. The frontend is responsible for safe rendering — Phase 5 Prompt 2 will handle that.
 - **No likes, comments, shares, reactions, media uploads, hashtags, mentions, notifications, or feed ranking.** Those belong to their own phases.
 
+### Feed UI / Post Slice Principles
+
+- **Redux owns server-derived state, NOT transient UI state.** The post slice owns `feed` (paginated list), `myPosts` (paginated list), `userPostsByUserId` (per-user cache), and `mutations.create / .update / .delete` (per-post loading + error flags). Selectors expose these to components.
+- **Composer textarea, modal open/close, dropdown state, hover, animation state — all LOCAL to each component.** They never enter Redux. This prevents per-keystroke dispatches and unnecessary re-renders across the tree.
+- **The feed is the authenticated home.** The temporary `AuthenticatedHomePage` was removed. `/` and `/feed` both render `FeedPage` (protected).
+- **Server-confirmed state only.** The composer does NOT use optimistic updates — the new post is prepended to feed only after the backend confirms success. Similarly for edit / delete.
+- **Post content is plain text.** Rendered with `whitespace-pre-wrap` and never with `dangerouslySetInnerHTML`. The frontend is responsible for safe text rendering.
+- **Pagination is "Load more".** The backend's `hasNextPage` is the authority. In-flight page requests are debounced locally so the user can't trigger duplicate fetches.
+- **Author spoofing is impossible.** The body cannot set `author` — it always comes from `req.user.id` (the auth middleware sets it; the slice never forwards it).
+- **Ownership is enforced server-side.** Edit / delete return 403 (not 404) when the caller is not the author — the existing convention from Phase 4. Frontend hides the Edit / Delete menu when `post.author.user.id !== authUser.id`.
+- **Existing functionality is preserved.** The connection slice / Network page / Profile page are untouched. ProfilePage still has its Phase 3 components (Avatar, Cover, About, Experience placeholder).
+
 ---
 
-**Last updated:** Phase 5 — Prompt 1 (posts / feed backend foundation).
+**Last updated:** Phase 5 — Prompt 2 (feed UI + post composer + post cards + Redux Toolkit).
