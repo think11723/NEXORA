@@ -199,6 +199,20 @@ Phases ship only what their scope describes. The foundation phase establishes in
 - **Ownership is enforced server-side.** Edit / delete return 403 (not 404) when the caller is not the author — the existing convention from Phase 4. Frontend hides the Edit / Delete menu when `post.author.user.id !== authUser.id`.
 - **Existing functionality is preserved.** The connection slice / Network page / Profile page are untouched. ProfilePage still has its Phase 3 components (Avatar, Cover, About, Experience placeholder).
 
+### Interaction System Principles (Phase 5 — Prompt 3)
+
+- **Reactions are a separate collection**, not an unbounded array on Post. Each Reaction is a (post, user, type) tuple.
+- **Database-level uniqueness:** the unique compound index `{ post, user, type }` prevents duplicate likes at the database level. Duplicate requests return 200 idempotent, not 409.
+- **Only one reaction type is supported in this phase** (`like`). Multi-reaction types (celebrate, support, etc.) are explicitly out of scope; the enum is extensible for a future phase.
+- **Comments are a separate collection**, not an unbounded array on Post. The brief explicitly avoided that anti-pattern.
+- **No nested replies, no comment reactions, no mentions, no notifications, no edit history** in this phase. Each is documented as a future phase.
+- **Comment ownership is enforced atomically:** edits and deletes use `findOneAndUpdate` / `findOneAndDelete` with `{ _id, author: callerId }`. Non-authors receive 403 (the project's existing convention), not 404.
+- **Comments are returned oldest-first** (natural conversation flow) sorted by `createdAt` ASC with `_id` as a deterministic tie-breaker.
+- **Comment content cap: 1000 characters.** Empty / whitespace-only / over-length content is rejected at the validator.
+- **No `dangerouslySetInnerHTML` for comment content** — plain text only, rendered with `whitespace-pre-wrap` like Post content.
+- **N+1 prevention on the Feed:** reaction summary + comment counts are computed in batched aggregations (`Reaction.aggregate` and `Comment.aggregate` grouped by postId) plus one per-caller `Reaction.find` for `likedByMe`. The Feed page does NOT generate one API request per post.
+- **Redux / local state boundary:** the `post` slice owns `interactions.byPostId` and `comments.byPostId` caches plus mutation flags. Composer textarea content, modal open/close, edit-comment drafts are LOCAL state. The PostComposer dispatches ONLY on submit (no per-keystroke dispatch).
+
 ---
 
-**Last updated:** Phase 5 — Prompt 2 (feed UI + post composer + post cards + Redux Toolkit).
+**Last updated:** Phase 5 — Prompt 3 (post interactions: reactions + comments).

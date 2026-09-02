@@ -26,7 +26,11 @@ async function create(req, res, next) {
     const participantMap = await postService.loadParticipantMap([post]);
     res.status(201).json(
       new ApiResponse(201, 'Post created', {
-        post: toSafePost(post, participantMap),
+        post: toSafePost(
+          post,
+          participantMap,
+          await postService.getInteractionSummaryForPost(post._id, req.user.id)
+        ),
       })
     );
   } catch (err) {
@@ -37,17 +41,19 @@ async function create(req, res, next) {
 /**
  * GET /api/v1/posts/:postId
  *
- * Auth required (consistent with the rest of the API surface).
- * Returns 404 when no post matches.
+ * Auth required. Returns 404 when no post matches.
  */
 async function getById(req, res, next) {
   try {
-    const post = await postService.getPostById(req.params.postId);
+    const { post, interactionSummary } = await postService.getPostById(
+      req.params.postId,
+      req.user.id
+    );
     if (!post) throw ApiError.notFound('Post not found');
     const participantMap = await postService.loadParticipantMap([post]);
     res.status(200).json(
       new ApiResponse(200, 'Post retrieved', {
-        post: toSafePost(post, participantMap),
+        post: toSafePost(post, participantMap, interactionSummary),
       })
     );
   } catch (err) {
@@ -57,21 +63,23 @@ async function getById(req, res, next) {
 
 /**
  * GET /api/v1/posts/me
- *
- * Posts authored by req.user.id. The user id is always derived from
- * the JWT — the client cannot influence it.
  */
 async function getMine(req, res, next) {
   try {
     const { page, limit } = res.locals.pagination.values;
-    const result = await postService.listPostsByAuthor(req.user.id, {
-      page,
-      limit,
-    });
+    const result = await postService.listPostsByAuthor(
+      req.user.id,
+      { page, limit },
+      req.user.id
+    );
     const participantMap = await postService.loadParticipantMap(result.posts);
     res.status(200).json(
       new ApiResponse(200, 'Your posts retrieved', {
-        posts: toSafePostList(result.posts, participantMap),
+        posts: toSafePostList(
+          result.posts,
+          participantMap,
+          result.interactionSummaries
+        ),
         pagination: paginationBlock(result),
       })
     );
@@ -82,22 +90,24 @@ async function getMine(req, res, next) {
 
 /**
  * GET /api/v1/posts/user/:userId
- *
- * Posts authored by `:userId`. 404 when the target user does not
- * exist; 200 + empty array when the user exists but has no posts.
  */
 async function getByUser(req, res, next) {
   try {
     await postService.assertUserExists(req.params.userId);
     const { page, limit } = res.locals.pagination.values;
-    const result = await postService.listPostsByAuthor(req.params.userId, {
-      page,
-      limit,
-    });
+    const result = await postService.listPostsByAuthor(
+      req.params.userId,
+      { page, limit },
+      req.user.id
+    );
     const participantMap = await postService.loadParticipantMap(result.posts);
     res.status(200).json(
       new ApiResponse(200, 'User posts retrieved', {
-        posts: toSafePostList(result.posts, participantMap),
+        posts: toSafePostList(
+          result.posts,
+          participantMap,
+          result.interactionSummaries
+        ),
         pagination: paginationBlock(result),
       })
     );
@@ -110,8 +120,8 @@ async function getByUser(req, res, next) {
  * GET /api/v1/posts/feed
  *
  * Chronological feed: caller's own posts + accepted connections' posts.
- * Pagination at the database level. ONE posts query after determining
- * eligible authors — no N+1.
+ * Pagination at the database level. Interaction summary (likeCount +
+ * likedByMe + commentCount) is computed in batched aggregations — no N+1.
  */
 async function getFeed(req, res, next) {
   try {
@@ -123,7 +133,11 @@ async function getFeed(req, res, next) {
     const participantMap = await postService.loadParticipantMap(result.posts);
     res.status(200).json(
       new ApiResponse(200, 'Feed retrieved', {
-        posts: toSafePostList(result.posts, participantMap),
+        posts: toSafePostList(
+          result.posts,
+          participantMap,
+          result.interactionSummaries
+        ),
         pagination: paginationBlock(result),
       })
     );
@@ -135,8 +149,8 @@ async function getFeed(req, res, next) {
 /**
  * PATCH /api/v1/posts/:postId
  *
- * Atomic ownership-aware update. The findOneAndUpdate matches only
- * when the caller is the author; we then disambiguate 404 / 403.
+ * Atomic ownership-aware update. findOneAndUpdate matches only when the
+ * caller is the author; we then disambiguate 404 / 403.
  */
 async function update(req, res, next) {
   try {
@@ -146,19 +160,21 @@ async function update(req, res, next) {
       req.body
     );
     if (!updated) {
-      // Either the post doesn't exist, or the caller isn't the author.
-      // Distinguish without leaking existence: load + check ownership.
-      // (We don't want to expose "this post exists" to non-author
-      // users; the project's existing convention is to return 403 in
-      // both cases for non-owners — see existing service rules.)
-      const existing = await postService.getPostById(req.params.postId);
-      if (!existing) throw ApiError.notFound('Post not found');
+      const existing = await postService.getPostById(
+        req.params.postId,
+        req.user.id
+      );
+      if (!existing.post) throw ApiError.notFound('Post not found');
       throw ApiError.forbidden('You can only edit your own posts.');
     }
     const participantMap = await postService.loadParticipantMap([updated]);
+    const interactionSummary = await postService.getInteractionSummaryForPost(
+      updated._id,
+      req.user.id
+    );
     res.status(200).json(
       new ApiResponse(200, 'Post updated', {
-        post: toSafePost(updated, participantMap),
+        post: toSafePost(updated, participantMap, interactionSummary),
       })
     );
   } catch (err) {
@@ -168,9 +184,6 @@ async function update(req, res, next) {
 
 /**
  * DELETE /api/v1/posts/:postId
- *
- * Atomic ownership-aware delete. Returns a small confirmation payload,
- * not the deleted document.
  */
 async function remove(req, res, next) {
   try {
@@ -179,8 +192,11 @@ async function remove(req, res, next) {
       req.user.id
     );
     if (!deleted) {
-      const existing = await postService.getPostById(req.params.postId);
-      if (!existing) throw ApiError.notFound('Post not found');
+      const existing = await postService.getPostById(
+        req.params.postId,
+        req.user.id
+      );
+      if (!existing.post) throw ApiError.notFound('Post not found');
       throw ApiError.forbidden('You can only delete your own posts.');
     }
     res.status(200).json(

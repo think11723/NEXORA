@@ -474,6 +474,29 @@ The authenticated home is the **Feed**. The route `/` (and the explicit alias `/
 
 Every API call goes through `postService.js` which uses the existing `apiClient` (so the JWT interceptor + 401 bridge apply transparently). The Phase 5 Prompt 1 backend contract is consumed as-is — the serializer, error envelope, and pagination block are used verbatim.
 
+### Interactions (Phase 5 — Prompt 3)
+
+| Method | Path                                       | Auth | Purpose                              |
+| ------ | ------------------------------------------ | ---- | ------------------------------------ |
+| POST   | `/api/v1/posts/:postId/reactions`          | JWT  | Like a post (idempotent)             |
+| DELETE | `/api/v1/posts/:postId/reactions`          | JWT  | Unlike a post (idempotent)           |
+| GET    | `/api/v1/posts/:postId/reactions`          | JWT  | Reaction summary: `{ count, likedByMe }` |
+| POST   | `/api/v1/posts/:postId/comments`           | JWT  | Add a comment (oldest-first ordering) |
+| GET    | `/api/v1/posts/:postId/comments?page=&limit=` | JWT  | List comments (paginated)            |
+| PATCH  | `/api/v1/comments/:commentId`             | JWT  | Edit own comment (403 for others)     |
+| DELETE | `/api/v1/comments/:commentId`             | JWT  | Delete own comment (403 for others)   |
+
+**Key invariants:**
+
+- One user + one post + one reaction type = at most one Reaction document (enforced by a unique compound index — duplicate likes return 200 idempotent, not 409).
+- All comments on a post are returned oldest-first (natural conversation flow).
+- The `interaction` block on a post response carries `{ likeCount, likedByMe, commentCount }` and is computed in batched aggregations — no N+1.
+
+**Frontend architecture:**
+
+- `client/src/store/slices/postSlice.js` extends the existing post slice with `interactions.byPostId` and `comments.byPostId` caches plus thunks for like / unlike / create / update / delete comment.
+- `client/src/components/feed/PostInteractionBar.jsx`, `CommentsSection.jsx`, `CommentItem.jsx`, `CommentComposer.jsx` are the new feed-side components.
+
 ### Profile (Phase 3 — Prompt 1)
 
 | Method | Path                      | Auth | Purpose                                 |

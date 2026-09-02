@@ -33,6 +33,8 @@ const User = require('../models/User');
 const Profile = require('../models/Profile');
 const Connection = require('../models/Connection');
 const ApiError = require('../utils/ApiError');
+const reactionService = require('./reaction.service');
+const commentService = require('./comment.service');
 
 const STATUS = Connection.STATUS;
 
@@ -95,25 +97,40 @@ async function createPost(authorId, rawBody) {
   return post;
 }
 
-async function getPostById(postId) {
-  return Post.findById(postId);
+async function getPostById(postId, userId) {
+  // Returns the post + its interaction summary so the detail view has
+  // the same shape as a feed card.
+  const post = await Post.findById(postId);
+  if (!post) return { post: null, interactionSummary: null };
+  if (!userId) {
+    return {
+      post,
+      interactionSummary: { likeCount: 0, likedByMe: false, commentCount: 0 },
+    };
+  }
+  const interactionSummary = await getInteractionSummaryForPost(postId, userId);
+  return { post, interactionSummary };
 }
 
 /**
  * List posts authored by `authorId`, newest first, paginated.
- *
- * Returns `{ posts, pagination }`. Uses the compound
- * `{author:1, createdAt:-1, _id:-1}` index — the sort is fully covered.
+ * Includes the same interaction summary shape as the feed so the
+ * "my posts" view doesn't need its own aggregation.
  */
-async function listPostsByAuthor(authorId, { page, limit }) {
+async function listPostsByAuthor(authorId, { page, limit }, viewerId) {
   const skip = (page - 1) * limit;
   const [docs, total] = await Promise.all([
     Post.find({ author: authorId }).sort(POST_SORT).skip(skip).limit(limit),
     Post.countDocuments({ author: authorId }),
   ]);
+  const postIds = docs.map((p) => String(p._id));
+  const interactionSummaries = viewerId
+    ? await loadInteractionSummaries(postIds, viewerId)
+    : new Map();
   return {
     posts: docs,
     pagination: buildPagination({ page, limit, total }),
+    interactionSummaries,
   };
 }
 
@@ -151,10 +168,40 @@ async function getFeedAuthorIds(userId) {
 }
 
 /**
+ * Batched interaction summary loader. ONE aggregation per type
+ * (Reaction counts grouped by postId, Comment counts grouped by
+ * postId), plus ONE small per-caller query for "did the caller like
+ * each of these posts?". The total query count is constant — 3 round
+ * trips — regardless of how many posts are in the page.
+ */
+async function loadInteractionSummaries(postIds, userId) {
+  if (!postIds.length) return new Map();
+
+  const [likes, commentCounts] = await Promise.all([
+    reactionService.getSummaryForPosts(postIds, userId),
+    commentService.countCommentsForPosts(postIds),
+  ]);
+
+  const map = new Map();
+  for (const id of postIds) {
+    const like = likes[id] || { count: 0, likedByMe: false };
+    map.set(id, {
+      likeCount: like.count,
+      likedByMe: like.likedByMe,
+      commentCount: commentCounts[id] || 0,
+    });
+  }
+  return map;
+}
+
+/**
  * Feed retrieval: ONE posts query after determining eligible authors.
  *
  * Pending / rejected / withdrawn connections are NEVER included (the
  * Connection model only counts `status: accepted`).
+ *
+ * Interaction summary (likeCount + likedByMe + commentCount) is
+ * computed in batched aggregations — not N+1.
  */
 async function getFeedForUser(userId, { page, limit }) {
   const skip = (page - 1) * limit;
@@ -170,9 +217,30 @@ async function getFeedForUser(userId, { page, limit }) {
       visibility: 'public',
     }),
   ]);
+
+  const postIds = docs.map((p) => String(p._id));
+  const interactionSummaries = await loadInteractionSummaries(postIds, userId);
+
   return {
     posts: docs,
     pagination: buildPagination({ page, limit, total }),
+    interactionSummaries,
+  };
+}
+
+/**
+ * Single-post interaction summary — used by `getPostById` so the
+ * detail view has the same summary shape as the feed.
+ */
+async function getInteractionSummaryForPost(postId, userId) {
+  const [likes, commentCounts] = await Promise.all([
+    reactionService.getSummaryForPost(postId, userId),
+    commentService.countCommentsForPosts([postId]),
+  ]);
+  return {
+    likeCount: likes.count,
+    likedByMe: likes.likedByMe,
+    commentCount: commentCounts[postId] || 0,
   };
 }
 
@@ -252,4 +320,5 @@ module.exports = {
   updatePostOwnedBy,
   deletePostOwnedBy,
   loadParticipantMap,
+  getInteractionSummaryForPost,
 };

@@ -5,6 +5,8 @@ const authRoutes = require('./auth.routes');
 const profileRoutes = require('./profile.routes');
 const connectionRoutes = require('./connection.routes');
 const postRoutes = require('./post.routes');
+const reactionRoutes = require('./reaction.routes');
+const { postCommentsRouter, commentItemRouter } = require('./comment.routes');
 
 /**
  * Single entry point that mounts every route module under /api/v1.
@@ -17,5 +19,14 @@ router.use('/auth', authRoutes);
 router.use('/profile', profileRoutes);
 router.use('/connections', connectionRoutes);
 router.use('/posts', postRoutes);
+
+// Post-scoped interactions: /posts/:postId/reactions and
+// /posts/:postId/comments. `mergeParams` is set on the inner routers so
+// they can read :postId.
+router.use('/posts/:postId/reactions', reactionRoutes);
+router.use('/posts/:postId/comments', postCommentsRouter);
+
+// Comment-scoped mutations: /comments/:commentId.
+router.use('/comments', commentItemRouter);
 
 module.exports = router;
