@@ -349,6 +349,95 @@ Verifies: validators, canonical pair, semantic status mapping, safe serializatio
 
 See [PROJECT_CONSTITUTION.md](./PROJECT_CONSTITUTION.md) §12 (Connection System Principles) for the full state machine table.
 
+### Posts (Phase 5 — Prompt 1)
+
+| Method | Path                         | Auth | Purpose                                            |
+| ------ | ---------------------------- | ---- | -------------------------------------------------- |
+| POST   | `/api/v1/posts`              | JWT  | Create a new post (author = `req.user.id`)         |
+| GET    | `/api/v1/posts/feed`         | JWT  | Chronological feed (caller + accepted connections) |
+| GET    | `/api/v1/posts/me`           | JWT  | Caller's own posts                                 |
+| GET    | `/api/v1/posts/user/:userId` | JWT  | A user's posts; 404 when user missing              |
+| GET    | `/api/v1/posts/:postId`      | JWT  | Single post (404 if missing)                       |
+| PATCH  | `/api/v1/posts/:postId`      | JWT  | Edit own post (403 for others, 404 missing)        |
+| DELETE | `/api/v1/posts/:postId`      | JWT  | Delete own post (403 for others, 404 missing)      |
+
+**Post response shape (safe serializer):**
+
+```json
+{
+  "id": "...",
+  "author": {
+    "user": {
+      "id": "...",
+      "firstName": "...",
+      "lastName": "...",
+      "fullName": "..."
+    },
+    "profile": { "headline": "...", "profilePhoto": "https://..." },
+    "placeholder": false
+  },
+  "content": "...",
+  "visibility": "public",
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+**Key semantics:**
+
+- Author is **always** `req.user.id`. The body cannot override it; the service-level guard catches any attempt.
+- Only the author may edit or delete. Authorization is enforced atomically (`findOneAndUpdate({_id, author: callerId}, ...)` and `findOneAndDelete({_id, author: callerId})`) so a user can never modify another user's post by manipulating an id.
+- Visibility today is only `public`. Future values (connections-only, etc.) extend the find clauses without changing the signature.
+- Content is plain text. The backend never HTML-renders content — the frontend will escape on render.
+- Missing-author safety: if a User has been removed, the post still serializes with `author: { user: null, profile: null, placeholder: true }`. The whole feed does NOT crash.
+
+**Pagination:**
+
+`?page=&limit=` query parameters. Defaults: page 1, limit 20. Maximum limit 50 (silently clamped, not rejected). The response includes a `pagination` block:
+
+```json
+{
+  "posts": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 123,
+    "totalPages": 7,
+    "hasNextPage": true,
+    "hasPreviousPage": false
+  }
+}
+```
+
+**Feed eligibility:**
+
+Posts whose author is the caller OR whose author is the other side of an **accepted** connection. Pending / rejected / withdrawn connections NEVER contribute to the feed. The query plan is:
+
+1. ONE `Connection.find({$or:[{userA},{userB}], status:'accepted'})` to gather partner ids.
+2. Combine caller id + partner ids.
+3. ONE `Post.find({author: {$in: authorIds}, visibility:'public'})` paginated + sorted.
+
+No N+1. No per-connection subqueries.
+
+**Sort order:** `createdAt` desc with `_id` desc as the deterministic tie-breaker. The compound index `{author:1, createdAt:-1, _id:-1}` covers the sort fully.
+
+**Indexes (every one is justified by a documented query pattern):**
+
+- `{ author: 1, createdAt: -1, _id: -1 }` — user-post listings + sort cover.
+- `{ createdAt: -1, _id: -1 }` — feed base query + sort cover.
+- `{ visibility: 1, createdAt: -1, _id: -1 }` — reserved for future visibility-based feeds.
+
+**Run the smoke test yourself:**
+
+```bash
+cd server
+node scripts/post.smoke.cjs
+```
+
+Expected: 41/41 passed. The connection smoke (`node scripts/connection.smoke.cjs`) should also continue to pass.
+
+See [PROJECT_CONSTITUTION.md](./PROJECT_CONSTITUTION.md) §12 (Post System Principles) for the architecture summary.
+
 ### Profile (Phase 3 — Prompt 1)
 
 | Method | Path                      | Auth | Purpose                                 |

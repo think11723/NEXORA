@@ -174,6 +174,19 @@ Every installed package must have a clear purpose in the MERN stack. No "popular
 
 Phases ship only what their scope describes. The foundation phase establishes infrastructure — not features.
 
+### Post System Principles
+
+- **One document per post** with `author` (ObjectId ref User), `content` (trimmed, bounded max length), `visibility` (enum, only `public` today), and timestamps.
+- **Author is always `req.user.id`.** The body cannot override it. The service-layer guard catches any attempt.
+- **Ownership is atomic.** Edit and delete use `findOneAndUpdate` / `findOneAndDelete` with `{ _id, author: callerId }` filters. A user can never modify another user's post by manipulating an id.
+- **Safe serialization.** The serializer exposes only intentional fields: `id`, `author` (rich block: `{ user, profile, placeholder }`), `content`, `visibility`, `createdAt`, `updatedAt`. Password, role, isActive, email, full Profile are NEVER returned. Missing authors surface as `placeholder: true` rather than throwing.
+- **Pagination at the database level.** Defaults: page 1, limit 20. Maximum limit 50, silently clamped. Invalid `page` / `limit` are rejected with 400.
+- **Feed eligibility = caller + every accepted connection.** Pending / rejected / withdrawn connections NEVER contribute. The query plan is TWO batched queries (one for connection ids, one for posts with `$in`), not an N+1 loop.
+- **Deterministic sort.** `createdAt` descending with `_id` descending as the tie-breaker.
+- **Indexes are justified by query patterns, not added speculatively.** See `server/models/Post.js` for the per-index documentation.
+- **HTML / script content is stored as plain text.** The backend never renders. The frontend is responsible for safe rendering — Phase 5 Prompt 2 will handle that.
+- **No likes, comments, shares, reactions, media uploads, hashtags, mentions, notifications, or feed ranking.** Those belong to their own phases.
+
 ---
 
-**Last updated:** Phase 4 — Prompt 2 (connection lifecycle hardening + network retrieval hardening).
+**Last updated:** Phase 5 — Prompt 1 (posts / feed backend foundation).
