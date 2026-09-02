@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+coverage/
+
+# Generated artifacts
+**/node_modules/
+**/dist/
+**/build/
+**/.vite/
+
+# Lockfile
+package-lock.json
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment files (handled by .gitignore already; keep formatting off them)
+.env
+.env.*
+!.env.example

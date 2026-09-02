@@ -1,0 +1,55 @@
+# =====================================================
+# NEXORA .gitignore
+# =====================================================
+
+# ---------- Node / npm ----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---------- Build output ----------
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# ---------- Environment & secrets ----------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+!.env.example
+
+# ---------- Logs ----------
+logs/
+*.log
+
+# ---------- OS files ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Editors / IDEs ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ---------- Misc ----------
+.cache/
+.vite/
+.parcel-cache/
+.eslintcache
+.prettiercache
+*.tmp
+*.temp
+.pnp.*
+
+# ---------- Empty package node_modules dirs (npm workspaces hoist to root) ----------
+**/node_modules/.vite/
